@@ -63,8 +63,8 @@ src/
   and stopped in `deactivate()`; never start them twice.
 - **Do not install this plugin from its own directory** through
   `POST /api/plugins/install {path}` — the host deletes the target before
-  copying, which is the source itself. Install it via `plugins.txt`
-  (`./sync.sh install-plugins`) or from a GitHub/Forgejo URL.
+  copying, which is the source itself. Install it from its GitHub URL
+  (`https://github.com/yoan31/openfox-telegram`) or from the curated registry.
 
 ## Do Not Read / Do Not Touch
 

@@ -24,6 +24,15 @@ the OpenFox tab focused.
 - A Telegram bot created with [@BotFather](https://t.me/BotFather) and its token.
 - The chat id to send to (your own user id, or a group id such as `-100…`).
 
+## Installation
+
+From OpenFox, open **Settings → Plugins** and install either:
+
+- from the curated registry (search for **Telegram**), or
+- by GitHub URL: `https://github.com/yoan31/openfox-telegram`.
+
+Then enable the plugin — no server restart is required.
+
 ## Configuration
 
 After enabling the plugin, open **Settings → Plugins → Telegram**:
