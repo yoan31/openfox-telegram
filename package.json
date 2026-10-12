@@ -1,0 +1,42 @@
+{
+  "name": "openfox-telegram",
+  "version": "1.0.0",
+  "description": "Telegram bridge plugin for OpenFox: notify and answer pending agent questions and path confirmations from Telegram.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --passWithNoTests --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "openfox": {
+    "apiVersion": 2,
+    "displayName": "Telegram",
+    "description": "Send OpenFox pending questions and path confirmations to Telegram, and answer them with inline buttons.",
+    "icon": "https://telegram.org/img/t_logo.svg",
+    "entry": "./dist/index.js",
+    "capabilities": [
+      "settings",
+      "hooks",
+      "rpc",
+      "notifications"
+    ],
+    "timeoutMs": 15000
+  },
+  "peerDependencies": {
+    "openfox": ">=2.0.140 <3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.15",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.0"
+  },
+  "license": "MIT"
+}
