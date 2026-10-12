@@ -215,6 +215,7 @@ export async function register(registry: PluginRegistry): Promise<void> {
       running: bridge.isRunning(),
       pending: bridge.pendingCount(),
       pollIntervalSeconds: settings.pollIntervalSeconds,
+      ...bridge.stats(),
     }
   })
 

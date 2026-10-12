@@ -65,6 +65,11 @@ export class TelegramBridge {
   private readonly tokenByCallId = new Map<string, string>()
   private readonly tokenByMessageId = new Map<number, string>()
 
+  private sentCount = 0
+  private lastSentAt: number | null = null
+  private lastSentKind: 'question' | 'confirmation' | null = null
+  private lastError: string | null = null
+
   constructor(options: BridgeOptions) {
     this.logger = options.logger
     this.createTelegram = options.createTelegram
@@ -124,6 +129,7 @@ export class TelegramBridge {
         await this.sendQuestion(session, question)
       }
     } catch (error) {
+      this.lastError = String(error)
       this.logger.warn('Failed to notify ask_user question', { error: String(error) })
     }
   }
@@ -145,6 +151,7 @@ export class TelegramBridge {
       question,
       createdAt: this.now(),
     })
+    this.recordSent('question')
     this.logger.info('Sent ask_user question to Telegram', { callId: question.callId, sessionId: session.id })
   }
 
@@ -165,6 +172,7 @@ export class TelegramBridge {
       confirmation,
       createdAt: this.now(),
     })
+    this.recordSent('confirmation')
     this.logger.info('Sent path confirmation to Telegram', { callId: confirmation.callId, sessionId: session.id })
   }
 
@@ -412,6 +420,28 @@ export class TelegramBridge {
   /** Number of requests currently awaiting an answer (for diagnostics). */
   pendingCount(): number {
     return this.pendingByToken.size
+  }
+
+  private recordSent(kind: 'question' | 'confirmation'): void {
+    this.sentCount += 1
+    this.lastSentAt = this.now()
+    this.lastSentKind = kind
+    this.lastError = null
+  }
+
+  /** Diagnostic snapshot exposed through the `telegram.status` RPC. */
+  stats(): {
+    sentCount: number
+    lastSentAt: number | null
+    lastSentKind: 'question' | 'confirmation' | null
+    lastError: string | null
+  } {
+    return {
+      sentCount: this.sentCount,
+      lastSentAt: this.lastSentAt,
+      lastSentKind: this.lastSentKind,
+      lastError: this.lastError,
+    }
   }
 }
 
