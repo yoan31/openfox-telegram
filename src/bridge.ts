@@ -444,9 +444,9 @@ export class TelegramBridge {
    */
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     const openfox = await this.testOpenFox()
-    if (!openfox.ok) return { ok: false, error: `OpenFox : ${openfox.error}` }
+    if (!openfox.ok) return { ok: false, error: `OpenFox: ${openfox.error}` }
     const telegram = await this.testTelegram()
-    if (!telegram.ok) return { ok: false, error: `Telegram : ${telegram.error}` }
+    if (!telegram.ok) return { ok: false, error: `Telegram: ${telegram.error}` }
     return { ok: true }
   }
 

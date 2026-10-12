@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { register, deactivate } from './index.js'
 
 interface RegistrySpy {
@@ -21,7 +21,7 @@ function createRegistry(): RegistrySpy {
     rpcs: {},
     context: {
       id: 'openfox-telegram',
-      version: '1.0.0',
+      version: '1.0.1',
       runtime: { mode: 'production', configDirectory: '/tmp' },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       settings: () => ({}),
@@ -48,6 +48,18 @@ function asRegistry(spy: RegistrySpy) {
 }
 
 describe('plugin registration', () => {
+  // Keep the suite hermetic: the connection test probes the OpenFox REST API,
+  // so a real `fetch` would otherwise hit http://127.0.0.1:10369.
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('network disabled in tests')
+    }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('registers settings, the turn.completed hook, RPCs and notifies', async () => {
     const spy = createRegistry()
     await register(asRegistry(spy) as never)
