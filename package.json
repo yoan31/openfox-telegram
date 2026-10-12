@@ -30,7 +30,7 @@
     "timeoutMs": 15000
   },
   "peerDependencies": {
-    "openfox": ">=2.0.140 <3"
+    "openfox": ">=2.0.56 <3"
   },
   "devDependencies": {
     "@types/node": "^22.19.15",

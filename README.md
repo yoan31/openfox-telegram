@@ -20,7 +20,7 @@ the OpenFox tab focused.
 
 ## Requirements
 
-- OpenFox ≥ 2.0.140 (plugin API v2).
+- OpenFox ≥ 2.0.56 (plugin API v2).
 - A Telegram bot created with [@BotFather](https://t.me/BotFather) and its token.
 - The chat id to send to (your own user id, or a group id such as `-100…`).
 

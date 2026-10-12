@@ -10,7 +10,7 @@ back to the OpenFox REST API.
 ## Stack
 
 - TypeScript, ESM, tsup, vitest 3.x
-- peerDep: `openfox >=2.0.140 <3`
+- peerDep: `openfox >=2.0.56 <3`
 - No runtime dependency (uses global `fetch`)
 
 ## Commands
