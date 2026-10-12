@@ -110,6 +110,13 @@ export class TelegramClient {
     })
   }
 
+  async deleteMessage(chatId: string, messageId: number): Promise<void> {
+    await this.call('deleteMessage', {
+      chat_id: chatId,
+      message_id: messageId,
+    })
+  }
+
   async editMessageText(chatId: string, messageId: number, text: string): Promise<void> {
     await this.call('editMessageText', {
       chat_id: chatId,

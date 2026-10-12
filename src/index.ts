@@ -175,6 +175,16 @@ const SETTINGS_SCHEMA: PluginSettingsSchema = {
       default: DEFAULT_SETTINGS.interactiveReplies,
     },
     {
+      key: 'clearOnExternalAnswer',
+      type: 'boolean',
+      label: { en: 'Clear on external answer', fr: 'Effacer si répondu ailleurs' },
+      description: {
+        en: 'Delete the Telegram message once the request is answered directly in OpenFox.',
+        fr: 'Supprimer le message Telegram dès que la demande est répondue directement dans OpenFox.',
+      },
+      default: DEFAULT_SETTINGS.clearOnExternalAnswer,
+    },
+    {
       key: 'testConnection',
       type: 'button',
       label: { en: 'Test the connection', fr: 'Tester la connexion' },

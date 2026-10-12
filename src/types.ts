@@ -48,6 +48,7 @@ export interface TelegramSettings {
   notifyOnAskUser: boolean
   notifyOnPathConfirmation: boolean
   interactiveReplies: boolean
+  clearOnExternalAnswer: boolean
 }
 
 /**

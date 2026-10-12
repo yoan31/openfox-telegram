@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: TelegramSettings = {
   notifyOnAskUser: true,
   notifyOnPathConfirmation: true,
   interactiveReplies: true,
+  clearOnExternalAnswer: true,
 }
 
 export const MIN_POLL_INTERVAL_SECONDS = 5
@@ -61,6 +62,7 @@ export function normalizeSettings(values: Record<string, unknown> | undefined): 
     notifyOnAskUser: asBoolean(raw['notifyOnAskUser'], DEFAULT_SETTINGS.notifyOnAskUser),
     notifyOnPathConfirmation: asBoolean(raw['notifyOnPathConfirmation'], DEFAULT_SETTINGS.notifyOnPathConfirmation),
     interactiveReplies: asBoolean(raw['interactiveReplies'], DEFAULT_SETTINGS.interactiveReplies),
+    clearOnExternalAnswer: asBoolean(raw['clearOnExternalAnswer'], DEFAULT_SETTINGS.clearOnExternalAnswer),
   }
 }
 

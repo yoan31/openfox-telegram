@@ -8,6 +8,7 @@
  * - keep an anti-duplicate / purge map keyed by callId
  */
 
+import { OpenFoxApiError } from './openfox-client.js'
 import type { OpenFoxClient } from './openfox-client.js'
 import type { TelegramClient, TelegramUpdate } from './telegram-client.js'
 import { TelegramApiError } from './telegram-client.js'
@@ -45,6 +46,7 @@ export interface BridgeOptions {
 
 const TOKEN_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 const LONG_POLL_SECONDS = 25
+const EMPTY_CALL_IDS: ReadonlySet<string> = new Set()
 
 export class TelegramBridge {
   private readonly logger: BridgeLogger
@@ -203,11 +205,13 @@ export class TelegramBridge {
       const intervalMs = Math.max(5, this.settings?.pollIntervalSeconds ?? 10) * 1000
       await this.sleep(intervalMs)
       if (!this.running) break
-      if (!this.configured() || !this.settings?.notifyOnPathConfirmation) continue
+      if (!this.configured()) continue
+      // Nothing to do unless confirmations are forwarded or external answers cleared.
+      if (!this.settings?.notifyOnPathConfirmation && !this.settings?.clearOnExternalAnswer) continue
       try {
         await this.pollConfirmations()
       } catch (error) {
-        this.logger.warn('Confirmation poll failed', { error: String(error) })
+        this.logger.warn('Pending poll failed', { error: String(error) })
       }
     }
   }
@@ -218,28 +222,105 @@ export class TelegramBridge {
     const { sessions, pendingConfirmationsBySession } = await this.openfox.listSessionsWithConfirmations()
     const sessionById = new Map(sessions.map((session) => [session.id, session]))
 
-    const stillPending = new Set<string>()
-    for (const [sessionId, confirmations] of Object.entries(pendingConfirmationsBySession)) {
-      const session = sessionById.get(sessionId) ?? { id: sessionId }
-      for (const confirmation of confirmations) {
-        stillPending.add(confirmation.callId)
-        if (this.tokenByCallId.has(confirmation.callId)) continue
-        try {
-          await this.sendConfirmation(session, confirmation)
-        } catch (error) {
-          this.logger.warn('Failed to send confirmation', { error: String(error), callId: confirmation.callId })
+    if (this.settings?.notifyOnPathConfirmation) {
+      for (const [sessionId, confirmations] of Object.entries(pendingConfirmationsBySession)) {
+        const session = sessionById.get(sessionId) ?? { id: sessionId }
+        for (const confirmation of confirmations) {
+          if (this.tokenByCallId.has(confirmation.callId)) continue
+          try {
+            await this.sendConfirmation(session, confirmation)
+          } catch (error) {
+            this.logger.warn('Failed to send confirmation', { error: String(error), callId: confirmation.callId })
+          }
         }
       }
     }
-    this.purgeMissing(stillPending)
+
+    await this.clearResolved(pendingConfirmationsBySession)
   }
 
-  /** Drop tracked confirmations that are no longer pending. */
-  private purgeMissing(stillPending: Set<string>): void {
-    for (const pending of [...this.pendingByToken.values()]) {
-      if (pending.kind !== 'confirmation') continue
-      if (!stillPending.has(pending.callId)) this.untrack(pending.token)
+  /**
+   * Remove tracked notifications that OpenFox no longer reports as pending —
+   * i.e. answered directly in OpenFox rather than through Telegram.
+   *
+   * Confirmations are already known from the bulk `pendingConfirmationsBySession`
+   * payload, so no extra request is made for them. Questions are only visible
+   * per session (`GET /api/sessions/:id`), so one request is made per session
+   * that still has a tracked question. A session that returns 404 is gone, so
+   * its notifications are cleared; any other read failure keeps them tracked.
+   */
+  private async clearResolved(
+    pendingConfirmationsBySession: Record<string, PendingConfirmation[]>,
+  ): Promise<void> {
+    const confirmationPending = new Map<string, Set<string>>()
+    for (const [sessionId, confirmations] of Object.entries(pendingConfirmationsBySession)) {
+      confirmationPending.set(sessionId, new Set(confirmations.map((confirmation) => confirmation.callId)))
     }
+
+    const questionSessionIds = new Set<string>()
+    for (const pending of this.pendingByToken.values()) {
+      if (pending.kind === 'question') questionSessionIds.add(pending.sessionId)
+    }
+
+    const questionPending = new Map<string, Set<string>>()
+    const goneSessions = new Set<string>()
+    for (const sessionId of questionSessionIds) {
+      try {
+        const session = await this.openfox!.getSession(sessionId)
+        questionPending.set(sessionId, new Set(session.pendingQuestions.map((question) => question.callId)))
+      } catch (error) {
+        if (error instanceof OpenFoxApiError && error.status === 404) {
+          // Session no longer exists: its notifications can never resolve.
+          goneSessions.add(sessionId)
+          continue
+        }
+        // Transient failure: keep tracking rather than clear by mistake.
+        this.logger.debug('Could not read session while clearing resolved notifications', {
+          error: String(error),
+          sessionId,
+        })
+      }
+    }
+
+    for (const pending of [...this.pendingByToken.values()]) {
+      if (goneSessions.has(pending.sessionId)) {
+        await this.clearResolvedMessage(pending)
+        continue
+      }
+      // Absent from the bulk payload = no pending confirmation for that session.
+      const stillPending =
+        pending.kind === 'question'
+          ? questionPending.get(pending.sessionId)
+          : (confirmationPending.get(pending.sessionId) ?? EMPTY_CALL_IDS)
+      if (!stillPending) continue
+      if (stillPending.has(pending.callId)) continue
+      await this.clearResolvedMessage(pending)
+    }
+  }
+
+  /**
+   * The request was answered outside Telegram: delete the Telegram message
+   * (falling back to an edit when deletion is impossible), then stop tracking it.
+   */
+  private async clearResolvedMessage(pending: PendingNotification): Promise<void> {
+    if (this.settings?.clearOnExternalAnswer) {
+      try {
+        await this.telegram!.deleteMessage(pending.chatId, pending.messageId)
+        this.logger.info('Deleted Telegram message after external answer', { callId: pending.callId })
+      } catch (error) {
+        this.logger.debug('Could not delete Telegram message, editing instead', { error: String(error) })
+        try {
+          await this.telegram!.editMessageText(
+            pending.chatId,
+            pending.messageId,
+            `${this.baseMessage(pending)}\n\n<b>Répondu sur OpenFox</b>`,
+          )
+        } catch (editError) {
+          this.logger.debug('Could not edit Telegram message', { error: String(editError) })
+        }
+      }
+    }
+    this.untrack(pending.token)
   }
 
   // --- incoming updates -------------------------------------------------------
@@ -375,15 +456,22 @@ export class TelegramBridge {
     return best
   }
 
+  /** Base text of a tracked notification, used when editing its Telegram message. */
+  private baseMessage(pending: PendingNotification): string {
+    return pending.kind === 'confirmation'
+      ? formatConfirmationMessage(pending.confirmation!, { id: pending.sessionId })
+      : formatQuestionMessage(pending.question!, { id: pending.sessionId })
+  }
+
   /** Edit the Telegram message to show the outcome and stop tracking it. */
   private async finalize(pending: PendingNotification, verdict: string): Promise<void> {
     this.untrack(pending.token)
     try {
-      const base =
-        pending.kind === 'confirmation'
-          ? formatConfirmationMessage(pending.confirmation!, { id: pending.sessionId })
-          : formatQuestionMessage(pending.question!, { id: pending.sessionId })
-      await this.telegram!.editMessageText(pending.chatId, pending.messageId, `${base}\n\n<b>${escapeHtml(verdict)}</b>`)
+      await this.telegram!.editMessageText(
+        pending.chatId,
+        pending.messageId,
+        `${this.baseMessage(pending)}\n\n<b>${escapeHtml(verdict)}</b>`,
+      )
     } catch (error) {
       this.logger.debug('Could not edit Telegram message', { error: String(error) })
     }

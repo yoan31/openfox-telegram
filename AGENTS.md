@@ -5,7 +5,8 @@
 OpenFox plugin that bridges "waiting for the user" states to Telegram:
 `ask_user` questions (via the `turn.completed` hook) and path/dangerous-command
 confirmations (via REST polling), with interactive inline-button replies routed
-back to the OpenFox REST API.
+back to the OpenFox REST API. Requests answered directly in OpenFox are detected
+on the next poll and their Telegram message is deleted.
 
 ## Stack
 
@@ -60,6 +61,13 @@ src/
   they must be polled from `GET /api/sessions`
   (`pendingConfirmationsBySession`). Questions are read from
   `GET /api/sessions/:id` (`pendingQuestions`).
+- Detecting that a request was answered **in OpenFox** (to clear the Telegram
+  message) reuses the bulk `pendingConfirmationsBySession` payload for
+  confirmations. Questions are only visible per session, so one
+  `GET /api/sessions/:id` is made per session that still has a tracked question;
+  a `callId` no longer pending is cleared (message deleted). A session returning
+  **404** is gone, so its notifications are cleared; any other read failure keeps
+  them tracked rather than cleared by mistake.
 - `callback_data` is capped at 64 bytes → the bridge sends a short opaque token,
   never the `callId`.
 - Background loops (`confirmationLoop`, `updatesLoop`) are started in `register()`

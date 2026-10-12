@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { TelegramBridge } from './bridge.js'
 import type { TelegramClient, TelegramUpdate } from './telegram-client.js'
 import type { OpenFoxClient } from './openfox-client.js'
+import { OpenFoxApiError } from './openfox-client.js'
 import type { PendingConfirmation, PendingQuestion, TelegramSettings } from './types.js'
 
 const BASE_SETTINGS: TelegramSettings = {
@@ -14,24 +15,33 @@ const BASE_SETTINGS: TelegramSettings = {
   notifyOnAskUser: true,
   notifyOnPathConfirmation: true,
   interactiveReplies: true,
+  clearOnExternalAnswer: true,
 }
 
 interface SentMessage {
   chatId: string
   text: string
   keyboard?: unknown
+  messageId: number
 }
 
 class FakeTelegram {
   sent: SentMessage[] = []
   edited: Array<{ chatId: string; messageId: number; text: string }> = []
+  deleted: Array<{ chatId: string; messageId: number }> = []
   answered: string[] = []
+  deleteShouldFail = false
   private nextId = 1000
 
   async sendMessage(chatId: string, text: string, keyboard?: unknown): Promise<{ message_id: number }> {
-    this.sent.push({ chatId, text, keyboard })
     this.nextId += 1
+    this.sent.push({ chatId, text, keyboard, messageId: this.nextId })
     return { message_id: this.nextId }
+  }
+
+  async deleteMessage(chatId: string, messageId: number): Promise<void> {
+    if (this.deleteShouldFail) throw new Error('deleteMessage failed')
+    this.deleted.push({ chatId, messageId })
   }
 
   async editMessageText(chatId: string, messageId: number, text: string): Promise<void> {
@@ -153,11 +163,131 @@ describe('TelegramBridge — confirmations', () => {
     expect(telegram.sent).toHaveLength(1)
     expect(bridge.pendingCount()).toBe(1)
 
-    // Confirmation resolved upstream -> next poll purges it, no duplicate send.
+    // Confirmation resolved upstream -> next poll clears it, no duplicate send.
     openfox.confirmations = {}
     await bridge.pollConfirmations()
     expect(bridge.pendingCount()).toBe(0)
     expect(telegram.sent).toHaveLength(1)
+    expect(telegram.deleted).toEqual([{ chatId: '100', messageId: telegram.sent[0]!.messageId }])
+  })
+})
+
+describe('TelegramBridge — clearing messages answered in OpenFox', () => {
+  it('deletes the Telegram message when a question is answered in OpenFox', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+    expect(bridge.pendingCount()).toBe(1)
+
+    // Answered directly in OpenFox -> no longer pending upstream.
+    openfox.questions = {}
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toEqual([{ chatId: '100', messageId: telegram.sent[0]!.messageId }])
+    expect(telegram.edited).toHaveLength(0)
+  })
+
+  it('deletes the Telegram message when a confirmation is answered in OpenFox', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.confirmations = {
+      s1: [{ callId: 'c1', tool: 'run_command', paths: ['/x'], workdir: '/w', reason: 'outside_workdir' }],
+    }
+    await bridge.pollConfirmations()
+
+    openfox.confirmations = {}
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toHaveLength(1)
+  })
+
+  it('falls back to editing when deletion fails', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    telegram.deleteShouldFail = true
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.questions = {}
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toHaveLength(0)
+    expect(telegram.edited).toHaveLength(1)
+    expect(telegram.edited[0]!.text).toContain('Répondu sur OpenFox')
+  })
+
+  it('does not delete when clearOnExternalAnswer is disabled', async () => {
+    const { bridge, telegram, openfox } = createBridge({ clearOnExternalAnswer: false })
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.questions = {}
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toHaveLength(0)
+    expect(telegram.edited).toHaveLength(0)
+  })
+
+  it('does not delete a message answered through Telegram', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    await bridge.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 100 }, from: { id: 7 }, text: 'Conrad' },
+    })
+    openfox.questions = {}
+    await bridge.pollConfirmations()
+
+    expect(telegram.deleted).toHaveLength(0)
+    expect(bridge.pendingCount()).toBe(0)
+  })
+
+  it('keeps tracking when the session cannot be read', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.getSession = async () => {
+      throw new Error('HTTP 500')
+    }
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(1)
+    expect(telegram.deleted).toHaveLength(0)
+  })
+
+  it('clears notifications when the session is gone (404)', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.getSession = async () => {
+      throw new OpenFoxApiError('OpenFox GET /api/sessions/s1 failed with HTTP 404', 404)
+    }
+    await bridge.pollConfirmations()
+
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toHaveLength(1)
+  })
+
+  it('does not read the session again for confirmations', async () => {
+    const { bridge, openfox } = createBridge()
+    let reads = 0
+    const original = openfox.getSession.bind(openfox)
+    openfox.getSession = async (sessionId: string) => {
+      reads += 1
+      return original(sessionId)
+    }
+    openfox.confirmations = {
+      s1: [{ callId: 'c1', tool: 'run_command', paths: ['/x'], workdir: '/w', reason: 'outside_workdir' }],
+    }
+    await bridge.pollConfirmations()
+
+    expect(reads).toBe(0)
   })
 })
 

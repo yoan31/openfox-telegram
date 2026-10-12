@@ -15,6 +15,16 @@ export interface OpenFoxClientOptions {
   fetchImpl?: FetchLike
 }
 
+export class OpenFoxApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'OpenFoxApiError'
+  }
+}
+
 interface SessionsResponse {
   sessions: SessionRef[]
   pendingConfirmationsBySession?: Record<string, PendingConfirmation[]>
@@ -46,7 +56,7 @@ export class OpenFoxClient {
   private async getJson<T>(path: string): Promise<T> {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { headers: this.headers() })
     if (!response.ok) {
-      throw new Error(`OpenFox GET ${path} failed with HTTP ${response.status}`)
+      throw new OpenFoxApiError(`OpenFox GET ${path} failed with HTTP ${response.status}`, response.status)
     }
     return (await response.json()) as T
   }

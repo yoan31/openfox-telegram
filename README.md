@@ -17,6 +17,9 @@ the OpenFox tab focused.
 - **Interactive replies** — a button press is routed back to OpenFox
   (`POST /api/sessions/:id/answer` or `/confirm-path`) and the Telegram message
   is edited to show the outcome.
+- **Answered in OpenFox** — if you answer directly in OpenFox instead, the
+  plugin notices on its next poll and deletes the Telegram message (falling back
+  to a "Répondu sur OpenFox" edit if deletion is not possible).
 
 ## Requirements
 
@@ -48,6 +51,7 @@ After enabling the plugin, open **Settings → Plugins → Telegram**:
 | **Notify on questions**  | Forward `ask_user` questions.                                                |
 | **Notify on confirmations** | Forward path/dangerous-command confirmations.                            |
 | **Interactive replies**  | Show inline buttons and accept Telegram replies.                             |
+| **Clear on external answer** | Delete the Telegram message once the request is answered directly in OpenFox. |
 | **Test the connection**  | Button: sends a test message and checks the OpenFox server.                  |
 
 ### Finding your chat id
@@ -87,8 +91,12 @@ Notes:
 - Path confirmations have **no plugin hook** in OpenFox, so they are detected by
   polling the REST API at the configured interval. Questions use the
   `turn.completed` hook.
-- Notifications are de-duplicated per `callId`; a tracked request is dropped once
-  it is no longer pending.
+- Notifications are de-duplicated per `callId`. Each poll checks the tracked
+  requests against OpenFox: a confirmation absent from the bulk
+  `pendingConfirmationsBySession` payload, or a question absent from its
+  session's `GET /api/sessions/:id` response, was answered elsewhere — its
+  Telegram message is deleted and the request dropped from tracking. A session
+  that no longer exists (404) is cleared too.
 - `callback_data` is kept under Telegram's 64-byte limit with a short opaque
   token (the `callId` is looked up locally, never sent to Telegram).
 
@@ -102,6 +110,12 @@ npm run build   # tsup -> dist/index.js
 ```
 
 ## Changelog
+
+### 1.0.2
+
+- Delete the Telegram message when the request is answered directly in OpenFox
+  (new **Clear on external answer** setting, on by default), with an edit
+  fallback when deletion is not possible.
 
 ### 1.0.1
 
