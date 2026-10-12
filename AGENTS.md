@@ -41,6 +41,9 @@ src/
 - **Add a Telegram API call** → `src/telegram-client.ts`
 - **Change an OpenFox endpoint call** → `src/openfox-client.ts`
 - **Add a setting** → `src/index.ts` (SETTINGS_SCHEMA) + `src/settings.ts`
+- **Connection test button** → `SETTINGS_SCHEMA` `testConnection` (type `button`,
+  `rpcMethod: 'telegram.test'`) in `src/index.ts`; logic in
+  `TelegramBridge.testConnection()` (`src/bridge.ts`)
 
 ## Conventions
 

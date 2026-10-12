@@ -242,6 +242,48 @@ describe('TelegramBridge — incoming replies', () => {
   })
 })
 
+describe('TelegramBridge — connection test', () => {
+  it('reports success when Telegram and OpenFox both respond', async () => {
+    const { bridge } = createBridge()
+    await expect(bridge.testConnection()).resolves.toEqual({ ok: true })
+  })
+
+  it('fails with a Telegram-prefixed error when Telegram is unconfigured', async () => {
+    const { bridge } = createBridge({ botToken: '', chatId: '' })
+    const result = await bridge.testConnection()
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Telegram')
+  })
+
+  it('fails with an OpenFox-prefixed error when the OpenFox API is unreachable', async () => {
+    const { bridge, openfox } = createBridge()
+    openfox.listSessionsWithConfirmations = async () => {
+      throw new Error('HTTP 500')
+    }
+    const result = await bridge.testConnection()
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('OpenFox')
+    expect(result.error).toContain('HTTP 500')
+  })
+
+  it('does not send a Telegram message when the OpenFox probe fails', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.listSessionsWithConfirmations = async () => {
+      throw new Error('HTTP 500')
+    }
+    await bridge.testConnection()
+    expect(telegram.sent).toHaveLength(0)
+  })
+
+  it('sends a test message mentioning the bot username', async () => {
+    const { bridge, telegram } = createBridge()
+    await bridge.testTelegram()
+    expect(telegram.sent).toHaveLength(1)
+    expect(telegram.sent[0]!.text).toContain('@bot')
+    expect(telegram.sent[0]!.text.toLowerCase()).toContain('test')
+  })
+})
+
 describe('TelegramBridge — lifecycle', () => {
   it('start/stop toggles the running flag idempotently', () => {
     const { bridge } = createBridge()

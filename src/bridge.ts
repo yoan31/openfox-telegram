@@ -397,17 +397,19 @@ export class TelegramBridge {
     }
   }
 
-  /** Send a plain test message; used by the RPC + settings button. */
-  async sendTestMessage(): Promise<{ ok: boolean; error?: string }> {
+  /** Verify the Telegram side: resolve the bot and send a test message. */
+  async testTelegram(): Promise<{ ok: boolean; error?: string }> {
     if (!this.settings?.botToken || !this.settings.chatId) {
-      return { ok: false, error: 'botToken et chatId sont requis' }
+      return { ok: false, error: 'botToken and chatId are required' }
     }
     try {
       const client = this.telegram ?? this.createTelegram(this.settings)
       const me = await client.getMe()
       await client.sendMessage(
         this.settings.chatId,
-        `✅ <b>OpenFox Telegram</b>\nConnexion réussie${me.username ? ` en tant que @${escapeHtml(me.username)}` : ''}.`,
+        `✅ <b>OpenFox Telegram</b>\nTest de connexion réussi${
+          me.username ? ` en tant que @${escapeHtml(me.username)}` : ''
+        }.`,
       )
       return { ok: true }
     } catch (error) {
@@ -415,6 +417,37 @@ export class TelegramBridge {
         error instanceof TelegramApiError ? error.message : error instanceof Error ? error.message : String(error)
       return { ok: false, error: message }
     }
+  }
+
+  /** Verify the OpenFox side by reading the sessions endpoint (read-only). */
+  async testOpenFox(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.settings?.openfoxBaseUrl) {
+      return { ok: false, error: 'openfoxBaseUrl is required' }
+    }
+    try {
+      const client = this.openfox ?? this.createOpenFox(this.settings)
+      await client.listSessionsWithConfirmations()
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { ok: false, error: message }
+    }
+  }
+
+  /**
+   * Verify both settings halves (Telegram + OpenFox). Used by the
+   * `telegram.test` RPC behind the settings button.
+   *
+   * The read-only OpenFox probe runs first so a partial failure never leaves a
+   * success message in the chat: the Telegram test message is only sent once
+   * the OpenFox side is confirmed reachable.
+   */
+  async testConnection(): Promise<{ ok: boolean; error?: string }> {
+    const openfox = await this.testOpenFox()
+    if (!openfox.ok) return { ok: false, error: `OpenFox : ${openfox.error}` }
+    const telegram = await this.testTelegram()
+    if (!telegram.ok) return { ok: false, error: `Telegram : ${telegram.error}` }
+    return { ok: true }
   }
 
   /** Number of requests currently awaiting an answer (for diagnostics). */

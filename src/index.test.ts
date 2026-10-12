@@ -53,10 +53,24 @@ describe('plugin registration', () => {
     await register(asRegistry(spy) as never)
 
     expect(spy.settings).toBeDefined()
-    expect((spy.settings as { fields: unknown[] }).fields.length).toBeGreaterThanOrEqual(9)
+    const fields = (spy.settings as { fields: { key: string; type: string; rpcMethod?: string }[] }).fields
+    expect(fields.length).toBeGreaterThanOrEqual(10)
+    const button = fields.find((field) => field.key === 'testConnection')
+    expect(button).toMatchObject({ type: 'button', rpcMethod: 'telegram.test' })
     expect(Object.keys(spy.hooks)).toEqual(['turn.completed'])
     expect(Object.keys(spy.rpcs).sort()).toEqual(['telegram.status', 'telegram.test'])
     expect(spy.context.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws and stays silent on failure when the connection test fails', async () => {
+    const spy = createRegistry()
+    await register(asRegistry(spy) as never)
+    spy.context.notify.mockClear()
+
+    await expect(spy.rpcs['telegram.test']!({})).rejects.toThrow()
+
+    expect(spy.context.notify).not.toHaveBeenCalled()
+    deactivate()
   })
 
   it('reports an unconfigured status and survives a hook call without config', async () => {
@@ -70,8 +84,7 @@ describe('plugin registration', () => {
     // No bot token configured -> hook must be a no-op, never throw.
     await expect(spy.hooks['turn.completed']!({ sessionId: 's1', data: { reason: 'waiting_for_user' } })).resolves.toBeUndefined()
 
-    const test = (await spy.rpcs['telegram.test']!({})) as { ok: boolean }
-    expect(test.ok).toBe(false)
+    await expect(spy.rpcs['telegram.test']!({})).rejects.toThrow()
 
     deactivate()
   })

@@ -25,13 +25,16 @@ interface LocalizedString {
 
 interface SettingsField {
   key: string
-  type: 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea'
+  type: 'text' | 'password' | 'number' | 'boolean' | 'select' | 'textarea' | 'button'
   label: LocalizedString
   description?: LocalizedString
   default?: string | number | boolean
   placeholder?: string
   secret?: boolean
   required?: boolean
+  buttonLabel?: LocalizedString
+  buttonVariant?: 'default' | 'primary' | 'secondary' | 'danger' | 'ghost'
+  rpcMethod?: string
 }
 
 interface PluginSettingsSchema {
@@ -171,6 +174,17 @@ const SETTINGS_SCHEMA: PluginSettingsSchema = {
       },
       default: DEFAULT_SETTINGS.interactiveReplies,
     },
+    {
+      key: 'testConnection',
+      type: 'button',
+      label: { en: 'Test the connection', fr: 'Tester la connexion' },
+      buttonVariant: 'secondary',
+      rpcMethod: 'telegram.test',
+      description: {
+        en: 'Send a test message to the chat and check the OpenFox server.',
+        fr: 'Envoyer un message de test au chat et vérifier le serveur OpenFox.',
+      },
+    },
   ],
 }
 
@@ -205,7 +219,19 @@ export async function register(registry: PluginRegistry): Promise<void> {
 
   registry.registerRpc('telegram.test', async () => {
     bridge.configure(readSettings(context))
-    return bridge.sendTestMessage()
+    const result = await bridge.testConnection()
+    if (!result.ok) {
+      throw new Error(result.error ?? 'Connection test failed')
+    }
+    context.notify({
+      title: { en: 'Connection successful', fr: 'Connexion réussie' },
+      body: {
+        en: 'Telegram and OpenFox settings are working.',
+        fr: 'Les réglages Telegram et OpenFox fonctionnent.',
+      },
+      level: 'success',
+    })
+    return result
   })
 
   registry.registerRpc('telegram.status', async () => {

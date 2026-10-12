@@ -48,6 +48,7 @@ After enabling the plugin, open **Settings → Plugins → Telegram**:
 | **Notify on questions**  | Forward `ask_user` questions.                                                |
 | **Notify on confirmations** | Forward path/dangerous-command confirmations.                            |
 | **Interactive replies**  | Show inline buttons and accept Telegram replies.                             |
+| **Test the connection**  | Button: sends a test message and checks the OpenFox server.                  |
 
 ### Finding your chat id
 
@@ -57,8 +58,16 @@ After enabling the plugin, open **Settings → Plugins → Telegram**:
 
 ### Testing the connection
 
-Use the **`telegram.test`** RPC (or restart the plugin) to send a test message
-to the configured chat.
+Click **Test the connection** at the bottom of the settings form. It probes the
+OpenFox sessions endpoint first (read-only) and, only when that succeeds, sends
+a test message to the configured chat (resolving the bot via `getMe`). The
+outcome is reported as a notification on success, or as an inline error under
+the button on failure — so a partial failure never leaves a success message in
+the chat.
+
+The underlying **`telegram.test`** RPC does the same when called directly: it
+resolves to `{ ok: true }` on success and **throws** an `Error` (with the
+failing side's message) when the test fails.
 
 ## How it works
 
@@ -91,6 +100,15 @@ npm test        # vitest
 npm run typecheck
 npm run build   # tsup -> dist/index.js
 ```
+
+## Changelog
+
+### 1.0.1
+
+- Added a **Test the connection** button to the settings form: it probes the
+  OpenFox sessions endpoint (read-only) then sends a test message to the chat,
+  reporting the result as a notification on success or an inline error on
+  failure.
 
 ## License
 
