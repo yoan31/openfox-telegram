@@ -15,6 +15,7 @@ import { TelegramApiError } from './telegram-client.js'
 import {
   confirmationKeyboard,
   decodeCallbackData,
+  emptyKeyboard,
   escapeHtml,
   formatConfirmationMessage,
   formatQuestionMessage,
@@ -47,6 +48,10 @@ export interface BridgeOptions {
 const TOKEN_ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 const LONG_POLL_SECONDS = 25
 const EMPTY_CALL_IDS: ReadonlySet<string> = new Set()
+// Give up tracking a notification whose session cannot be read for this long,
+// so a persistently failing session cannot leak tracked entries (and one
+// GET /api/sessions/:id per poll) forever.
+const UNREADABLE_SESSION_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 export class TelegramBridge {
   private readonly logger: BridgeLogger
@@ -264,6 +269,7 @@ export class TelegramBridge {
 
     const questionPending = new Map<string, Set<string>>()
     const goneSessions = new Set<string>()
+    const unreadableSessions = new Set<string>()
     for (const sessionId of questionSessionIds) {
       try {
         const session = await this.openfox!.getSession(sessionId)
@@ -275,6 +281,7 @@ export class TelegramBridge {
           continue
         }
         // Transient failure: keep tracking rather than clear by mistake.
+        unreadableSessions.add(sessionId)
         this.logger.debug('Could not read session while clearing resolved notifications', {
           error: String(error),
           sessionId,
@@ -285,6 +292,18 @@ export class TelegramBridge {
     for (const pending of [...this.pendingByToken.values()]) {
       if (goneSessions.has(pending.sessionId)) {
         await this.clearResolvedMessage(pending)
+        continue
+      }
+      if (
+        unreadableSessions.has(pending.sessionId) &&
+        this.now() - pending.createdAt >= UNREADABLE_SESSION_MAX_AGE_MS
+      ) {
+        // Session unreadable for too long: drop it instead of leaking forever.
+        this.logger.warn('Dropping notification for unreadable session after max age', {
+          callId: pending.callId,
+          sessionId: pending.sessionId,
+        })
+        this.untrack(pending.token)
         continue
       }
       // Absent from the bulk payload = no pending confirmation for that session.
@@ -314,6 +333,7 @@ export class TelegramBridge {
             pending.chatId,
             pending.messageId,
             `${this.baseMessage(pending)}\n\n<b>Répondu sur OpenFox</b>`,
+            emptyKeyboard(),
           )
         } catch (editError) {
           this.logger.debug('Could not edit Telegram message', { error: String(editError) })
@@ -471,6 +491,7 @@ export class TelegramBridge {
         pending.chatId,
         pending.messageId,
         `${this.baseMessage(pending)}\n\n<b>${escapeHtml(verdict)}</b>`,
+        emptyKeyboard(),
       )
     } catch (error) {
       this.logger.debug('Could not edit Telegram message', { error: String(error) })

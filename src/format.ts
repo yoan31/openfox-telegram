@@ -134,6 +134,10 @@ export function questionKeyboard(token: string, question: PendingQuestion): Inli
   return { inline_keyboard: rows }
 }
 
+export function emptyKeyboard(): InlineKeyboardMarkup {
+  return { inline_keyboard: [] }
+}
+
 export function confirmationKeyboard(token: string): InlineKeyboardMarkup {
   return {
     inline_keyboard: [

@@ -27,7 +27,7 @@ interface SentMessage {
 
 class FakeTelegram {
   sent: SentMessage[] = []
-  edited: Array<{ chatId: string; messageId: number; text: string }> = []
+  edited: Array<{ chatId: string; messageId: number; text: string; keyboard?: unknown }> = []
   deleted: Array<{ chatId: string; messageId: number }> = []
   answered: string[] = []
   deleteShouldFail = false
@@ -44,8 +44,8 @@ class FakeTelegram {
     this.deleted.push({ chatId, messageId })
   }
 
-  async editMessageText(chatId: string, messageId: number, text: string): Promise<void> {
-    this.edited.push({ chatId, messageId, text })
+  async editMessageText(chatId: string, messageId: number, text: string, keyboard?: unknown): Promise<void> {
+    this.edited.push({ chatId, messageId, text, keyboard })
   }
 
   async answerCallbackQuery(_id: string, text?: string): Promise<void> {
@@ -98,7 +98,10 @@ class FakeOpenFox {
   }
 }
 
-function createBridge(settings: Partial<TelegramSettings> = {}): {
+function createBridge(
+  settings: Partial<TelegramSettings> = {},
+  now: () => number = () => Date.now(),
+): {
   bridge: TelegramBridge
   telegram: FakeTelegram
   openfox: FakeOpenFox
@@ -110,7 +113,7 @@ function createBridge(settings: Partial<TelegramSettings> = {}): {
     logger,
     createTelegram: () => telegram as unknown as TelegramClient,
     createOpenFox: () => openfox as unknown as OpenFoxClient,
-    now: () => Date.now(),
+    now,
   })
   bridge.configure({ ...BASE_SETTINGS, ...settings })
   return { bridge, telegram, openfox }
@@ -272,6 +275,53 @@ describe('TelegramBridge — clearing messages answered in OpenFox', () => {
 
     expect(bridge.pendingCount()).toBe(0)
     expect(telegram.deleted).toHaveLength(1)
+  })
+
+  it('drops a notification whose session stays unreadable past the max age', async () => {
+    let clock = 0
+    const { bridge, telegram, openfox } = createBridge({}, () => clock)
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.getSession = async () => {
+      throw new Error('HTTP 500')
+    }
+
+    clock = 23 * 60 * 60 * 1000
+    await bridge.pollConfirmations()
+    expect(bridge.pendingCount()).toBe(1)
+
+    clock = 25 * 60 * 60 * 1000
+    await bridge.pollConfirmations()
+    expect(bridge.pendingCount()).toBe(0)
+    expect(telegram.deleted).toHaveLength(0)
+  })
+
+  it('strips the inline keyboard when editing a resolved message', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    telegram.deleteShouldFail = true
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.questions = {}
+    await bridge.pollConfirmations()
+
+    expect(telegram.edited).toHaveLength(1)
+    expect(telegram.edited[0]!.keyboard).toEqual({ inline_keyboard: [] })
+  })
+
+  it('strips the inline keyboard when finalizing a Telegram answer', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    await bridge.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 100 }, from: { id: 7 }, text: 'Conrad' },
+    })
+
+    expect(telegram.edited).toHaveLength(1)
+    expect(telegram.edited[0]!.keyboard).toEqual({ inline_keyboard: [] })
   })
 
   it('does not read the session again for confirmations', async () => {

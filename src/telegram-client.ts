@@ -117,13 +117,19 @@ export class TelegramClient {
     })
   }
 
-  async editMessageText(chatId: string, messageId: number, text: string): Promise<void> {
+  async editMessageText(
+    chatId: string,
+    messageId: number,
+    text: string,
+    replyMarkup?: InlineKeyboardMarkup,
+  ): Promise<void> {
     await this.call('editMessageText', {
       chat_id: chatId,
       message_id: messageId,
       text,
       parse_mode: 'HTML',
       disable_web_page_preview: true,
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     })
   }
 

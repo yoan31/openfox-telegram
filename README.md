@@ -96,7 +96,9 @@ Notes:
   `pendingConfirmationsBySession` payload, or a question absent from its
   session's `GET /api/sessions/:id` response, was answered elsewhere — its
   Telegram message is deleted and the request dropped from tracking. A session
-  that no longer exists (404) is cleared too.
+  that no longer exists (404) is cleared too; a session that stays unreadable is
+  dropped after 24 h. When a message is edited instead of deleted, its inline
+  buttons are removed.
 - `callback_data` is kept under Telegram's 64-byte limit with a short opaque
   token (the `callId` is looked up locally, never sent to Telegram).
 

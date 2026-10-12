@@ -67,7 +67,9 @@ src/
   `GET /api/sessions/:id` is made per session that still has a tracked question;
   a `callId` no longer pending is cleared (message deleted). A session returning
   **404** is gone, so its notifications are cleared; any other read failure keeps
-  them tracked rather than cleared by mistake.
+  them tracked, up to a 24 h max age after which they are dropped (so an
+  unreadable session cannot leak tracked entries forever). Edited messages pass
+  an empty inline keyboard to strip the now-dead buttons.
 - `callback_data` is capped at 64 bytes → the bridge sends a short opaque token,
   never the `callId`.
 - Background loops (`confirmationLoop`, `updatesLoop`) are started in `register()`
