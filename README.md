@@ -120,7 +120,7 @@ npm run build   # tsup -> dist/index.js
 
 ## Changelog
 
-### Unreleased
+### 1.0.3
 
 - Show a clickable link to the session (`/p/<projectId>/s/<sessionId>`) and its
   state in question and confirmation messages. A forwarded notification is shown
