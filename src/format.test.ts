@@ -8,6 +8,8 @@ import {
   formatQuestionMessage,
   questionKeyboard,
   splitQuestionToken,
+  statusStateLabel,
+  WAITING_SESSION_STATE,
 } from './format.js'
 import type { PendingConfirmation, PendingQuestion } from './types.js'
 
@@ -58,6 +60,45 @@ describe('message formatting', () => {
 
   it('escapes html helper', () => {
     expect(escapeHtml('<a> & "b"')).toBe('&lt;a&gt; &amp; "b"')
+  })
+
+  it('adds the session link and state when provided', () => {
+    const question: PendingQuestion = { callId: '1', question: 'Continue?', type: 'text' }
+    const text = formatQuestionMessage(question, { id: 's1', title: 'Session 1' }, {
+      sessionState: 'En attente',
+      sessionLinkUrl: 'http://127.0.0.1:10369/p/p1/s/s1',
+    })
+    expect(text).toContain('État : En attente')
+    expect(text).toContain('<a href="http://127.0.0.1:10369/p/p1/s/s1">Ouvrir la session</a>')
+  })
+
+  it('omits the link and state when not provided', () => {
+    const question: PendingQuestion = { callId: '1', question: 'Continue?', type: 'text' }
+    const text = formatQuestionMessage(question, { id: 's1', title: 'Session 1' })
+    expect(text).not.toContain('État :')
+    expect(text).not.toContain('Ouvrir la session')
+  })
+
+  it('escapes the session link url', () => {
+    const question: PendingQuestion = { callId: '1', question: 'x', type: 'text' }
+    const text = formatQuestionMessage(question, { id: 's1' }, {
+      sessionLinkUrl: 'http://h/p/p%26/s/s%20a',
+    })
+    expect(text).toContain('href="http://h/p/p%26/s/s%20a"')
+  })
+})
+
+describe('session state helpers', () => {
+  it('maps the status endpoint state to a label', () => {
+    expect(statusStateLabel('running')).toBe('En cours')
+    expect(statusStateLabel('waiting')).toBe('En attente')
+    expect(statusStateLabel('blocked')).toBe('Bloquée')
+    expect(statusStateLabel('completed')).toBe('Terminée')
+    expect(statusStateLabel(null)).toBe('')
+  })
+
+  it('labels a pending notification as waiting', () => {
+    expect(WAITING_SESSION_STATE).toBe('En attente')
   })
 })
 

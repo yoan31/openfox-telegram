@@ -30,7 +30,7 @@ src/
 ├── bridge.ts           # TelegramBridge: outgoing notifications + incoming routing
 ├── format.ts           # Message formatting, callback_data encode/decode, keyboards
 ├── telegram-client.ts  # Minimal Telegram Bot API client (injectable fetch)
-├── openfox-client.ts   # OpenFox REST client (/api/sessions, /answer, /confirm-path)
+├── openfox-client.ts   # OpenFox REST client (/api/sessions, /status, /answer, /confirm-path)
 ├── settings.ts         # Settings normalization + defaults
 └── types.ts            # Shared types
 ```
@@ -70,6 +70,12 @@ src/
   them tracked, up to a 24 h max age after which they are dropped (so an
   unreadable session cannot leak tracked entries forever). Edited messages pass
   an empty inline keyboard to strip the now-dead buttons.
+- Messages show a clickable session link (`<baseUrl>/p/<projectId>/s/<sessionId>`)
+  and the session state. A forwarded notification always means the user is
+  awaited, so the send-time state is "En attente"; the final edit re-reads
+  `GET /api/sessions/:id/status` (one request per finalization, none on send) and
+  falls back to the remembered state on read failure. Both are gated by the
+  `includeSessionLink` / `includeSessionState` settings.
 - `callback_data` is capped at 64 bytes → the bridge sends a short opaque token,
   never the `callId`.
 - Background loops (`confirmationLoop`, `updatesLoop`) are started in `register()`

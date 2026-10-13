@@ -81,10 +81,51 @@ const REASON_LABEL: Record<string, string> = {
   git_no_verify: 'Commande git avec --no-verify',
 }
 
-export function formatQuestionMessage(question: PendingQuestion, session: { id: string; title?: string }): string {
+/** French labels for the `state` returned by `GET /api/sessions/:id/status`. */
+const STATUS_STATE_LABEL: Record<string, string> = {
+  running: 'En cours',
+  waiting: 'En attente',
+  blocked: 'Bloquée',
+  completed: 'Terminée',
+}
+
+export function statusStateLabel(state: string | null | undefined): string {
+  return state ? (STATUS_STATE_LABEL[state] ?? '') : ''
+}
+
+/**
+ * Label shown at send time: a forwarded question or confirmation always means
+ * the session is waiting for the user, even though its summary still reports
+ * `isRunning` (the turn resolves only after the request is answered).
+ */
+export const WAITING_SESSION_STATE = STATUS_STATE_LABEL['waiting']!
+
+export interface SessionDisplay {
+  id: string
+  title?: string
+}
+
+export interface FormatOptions {
+  sessionState?: string | null
+  sessionLinkUrl?: string
+}
+
+function sessionHeader(session: SessionDisplay, options?: FormatOptions): string[] {
+  const lines: string[] = []
+  if (session.title) lines.push(`Session : <i>${escapeHtml(session.title)}</i>`)
+  if (options?.sessionState) lines.push(`État : ${escapeHtml(options.sessionState)}`)
+  if (options?.sessionLinkUrl) lines.push(`<a href="${escapeHtml(options.sessionLinkUrl)}">Ouvrir la session</a>`)
+  return lines
+}
+
+export function formatQuestionMessage(
+  question: PendingQuestion,
+  session: SessionDisplay,
+  options?: FormatOptions,
+): string {
   const lines: string[] = []
   lines.push('❓ <b>OpenFox attend votre réponse</b>')
-  if (session.title) lines.push(`Session : <i>${escapeHtml(session.title)}</i>`)
+  lines.push(...sessionHeader(session, options))
   lines.push('')
   lines.push(escapeHtml(truncate(question.question, 3500)))
   return lines.join('\n')
@@ -92,11 +133,12 @@ export function formatQuestionMessage(question: PendingQuestion, session: { id: 
 
 export function formatConfirmationMessage(
   confirmation: PendingConfirmation,
-  session: { id: string; title?: string },
+  session: SessionDisplay,
+  options?: FormatOptions,
 ): string {
   const lines: string[] = []
   lines.push('⚠️ <b>OpenFox demande une confirmation</b>')
-  if (session.title) lines.push(`Session : <i>${escapeHtml(session.title)}</i>`)
+  lines.push(...sessionHeader(session, options))
   lines.push('')
   lines.push(`Outil : <code>${escapeHtml(confirmation.tool)}</code>`)
   lines.push(`Motif : ${escapeHtml(REASON_LABEL[confirmation.reason] ?? confirmation.reason)}`)

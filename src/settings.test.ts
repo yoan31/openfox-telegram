@@ -25,6 +25,18 @@ describe('normalizeSettings', () => {
   it('clamps the poll interval to the minimum', () => {
     expect(normalizeSettings({ pollIntervalSeconds: 1 }).pollIntervalSeconds).toBe(5)
   })
+
+  it('defaults the session display toggles to true', () => {
+    const settings = normalizeSettings({})
+    expect(settings.includeSessionLink).toBe(true)
+    expect(settings.includeSessionState).toBe(true)
+  })
+
+  it('reads the session display toggles from strings', () => {
+    const settings = normalizeSettings({ includeSessionLink: 'false', includeSessionState: 'false' })
+    expect(settings.includeSessionLink).toBe(false)
+    expect(settings.includeSessionState).toBe(false)
+  })
 })
 
 describe('parseAllowedUserIds', () => {

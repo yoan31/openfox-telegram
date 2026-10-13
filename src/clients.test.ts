@@ -106,6 +106,17 @@ describe('OpenFoxClient', () => {
     const [, init] = fetchImpl.mock.calls[0]!
     expect((init!.headers as Record<string, string>)['x-session-token']).toBeUndefined()
   })
+
+  it('reads the lightweight session status', async () => {
+    const fetchImpl = makeFetch({ state: 'running', phase: 'build' })
+    const client = new OpenFoxClient({ baseUrl: 'http://127.0.0.1:10369', fetchImpl })
+
+    const status = await client.getSessionStatus('s1')
+
+    expect(status.state).toBe('running')
+    const [url] = fetchImpl.mock.calls[0]!
+    expect(url).toBe('http://127.0.0.1:10369/api/sessions/s1/status')
+  })
 })
 
 describe('TelegramApiError', () => {

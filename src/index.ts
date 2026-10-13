@@ -185,6 +185,26 @@ const SETTINGS_SCHEMA: PluginSettingsSchema = {
       default: DEFAULT_SETTINGS.clearOnExternalAnswer,
     },
     {
+      key: 'includeSessionLink',
+      type: 'boolean',
+      label: { en: 'Include session link', fr: 'Inclure le lien de session' },
+      description: {
+        en: 'Add a clickable link to the session in OpenFox.',
+        fr: 'Ajouter un lien cliquable vers la session dans OpenFox.',
+      },
+      default: DEFAULT_SETTINGS.includeSessionLink,
+    },
+    {
+      key: 'includeSessionState',
+      type: 'boolean',
+      label: { en: 'Include session state', fr: 'Inclure l’état de la session' },
+      description: {
+        en: 'Show whether the session is running, waiting, blocked or completed.',
+        fr: 'Afficher si la session est en cours, en attente, bloquée ou terminée.',
+      },
+      default: DEFAULT_SETTINGS.includeSessionState,
+    },
+    {
       key: 'testConnection',
       type: 'button',
       label: { en: 'Test the connection', fr: 'Tester la connexion' },

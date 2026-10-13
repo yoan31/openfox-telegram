@@ -52,6 +52,8 @@ After enabling the plugin, open **Settings → Plugins → Telegram**:
 | **Notify on confirmations** | Forward path/dangerous-command confirmations.                            |
 | **Interactive replies**  | Show inline buttons and accept Telegram replies.                             |
 | **Clear on external answer** | Delete the Telegram message once the request is answered directly in OpenFox. |
+| **Include session link**  | Add a clickable link to the session in OpenFox.                             |
+| **Include session state** | Show whether the session is running, waiting, blocked or completed.         |
 | **Test the connection**  | Button: sends a test message and checks the OpenFox server.                  |
 
 ### Finding your chat id
@@ -101,6 +103,11 @@ Notes:
   buttons are removed.
 - `callback_data` is kept under Telegram's 64-byte limit with a short opaque
   token (the `callId` is looked up locally, never sent to Telegram).
+- Messages carry a clickable link to the session and its current state. The
+  link is built from the configured **OpenFox base URL** and the session's
+  `projectId`; a forwarded notification is shown as "En attente" and, on the
+  final edit, the state is re-read from `GET /api/sessions/:id/status` (one
+  request per finalization, skipped on the initial send).
 
 ## Development
 
@@ -112,6 +119,16 @@ npm run build   # tsup -> dist/index.js
 ```
 
 ## Changelog
+
+### Unreleased
+
+- Show a clickable link to the session (`/p/<projectId>/s/<sessionId>`) and its
+  state in question and confirmation messages. A forwarded notification is shown
+  as "En attente" (the session is waiting for the user), and the final edit after
+  an answer re-reads the state via `GET /api/sessions/:id/status` so it reflects
+  the real post-answer state, falling back to the remembered value. Two new
+  settings — **Include session link** and **Include session state** (both on by
+  default) — control this independently.
 
 ### 1.0.2
 

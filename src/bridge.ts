@@ -21,6 +21,8 @@ import {
   formatQuestionMessage,
   questionKeyboard,
   splitQuestionToken,
+  statusStateLabel,
+  WAITING_SESSION_STATE,
 } from './format.js'
 import type {
   PendingConfirmation,
@@ -146,7 +148,8 @@ export class TelegramBridge {
     const telegram = this.telegram!
     const token = this.newToken()
     const keyboard = this.settings?.interactiveReplies ? questionKeyboard(token, question) : undefined
-    const text = formatQuestionMessage(question, session)
+    const state = this.settings?.includeSessionState ? WAITING_SESSION_STATE : null
+    const text = formatQuestionMessage(question, session, this.displayOptions(session.id, session.projectId, state))
     const result = await telegram.sendMessage(this.settings!.chatId, text, keyboard)
     this.track({
       token,
@@ -156,6 +159,9 @@ export class TelegramBridge {
       chatId: this.settings!.chatId,
       messageId: result.message_id,
       question,
+      projectId: session.projectId,
+      sessionTitle: session.title,
+      sessionState: state,
       createdAt: this.now(),
     })
     this.recordSent('question')
@@ -167,7 +173,8 @@ export class TelegramBridge {
     const telegram = this.telegram!
     const token = this.newToken()
     const keyboard = this.settings?.interactiveReplies ? confirmationKeyboard(token) : undefined
-    const text = formatConfirmationMessage(confirmation, session)
+    const state = this.settings?.includeSessionState ? WAITING_SESSION_STATE : null
+    const text = formatConfirmationMessage(confirmation, session, this.displayOptions(session.id, session.projectId, state))
     const result = await telegram.sendMessage(this.settings!.chatId, text, keyboard)
     this.track({
       token,
@@ -177,10 +184,36 @@ export class TelegramBridge {
       chatId: this.settings!.chatId,
       messageId: result.message_id,
       confirmation,
+      projectId: session.projectId,
+      sessionTitle: session.title,
+      sessionState: state,
       createdAt: this.now(),
     })
     this.recordSent('confirmation')
     this.logger.info('Sent path confirmation to Telegram', { callId: confirmation.callId, sessionId: session.id })
+  }
+
+  /** Inline display options (state + session link) shared by send and edit. */
+  private displayOptions(
+    sessionId: string,
+    projectId: string | undefined,
+    sessionState?: string | null,
+  ): { sessionState?: string | null; sessionLinkUrl?: string } {
+    const options: { sessionState?: string | null; sessionLinkUrl?: string } = {}
+    if (this.settings?.includeSessionState) options.sessionState = sessionState ?? null
+    if (this.settings?.includeSessionLink) {
+      const url = this.sessionLinkUrl(sessionId, projectId)
+      if (url) options.sessionLinkUrl = url
+    }
+    return options
+  }
+
+  /** Build the OpenFox UI URL for a session, or null when the project is unknown. */
+  private sessionLinkUrl(sessionId: string, projectId?: string): string | null {
+    if (!projectId) return null
+    const base = (this.settings?.openfoxBaseUrl ?? '').replace(/\/+$/, '')
+    if (!base) return null
+    return `${base}/p/${encodeURIComponent(projectId)}/s/${encodeURIComponent(sessionId)}`
   }
 
   private track(notification: PendingNotification): void {
@@ -328,11 +361,12 @@ export class TelegramBridge {
         this.logger.info('Deleted Telegram message after external answer', { callId: pending.callId })
       } catch (error) {
         this.logger.debug('Could not delete Telegram message, editing instead', { error: String(error) })
+        const sessionState = await this.refreshSessionState(pending)
         try {
           await this.telegram!.editMessageText(
             pending.chatId,
             pending.messageId,
-            `${this.baseMessage(pending)}\n\n<b>Répondu sur OpenFox</b>`,
+            `${this.baseMessage(pending, sessionState)}\n\n<b>Répondu sur OpenFox</b>`,
             emptyKeyboard(),
           )
         } catch (editError) {
@@ -477,20 +511,43 @@ export class TelegramBridge {
   }
 
   /** Base text of a tracked notification, used when editing its Telegram message. */
-  private baseMessage(pending: PendingNotification): string {
+  private baseMessage(pending: PendingNotification, sessionState?: string | null): string {
+    const session = { id: pending.sessionId, title: pending.sessionTitle }
+    const options = this.displayOptions(
+      pending.sessionId,
+      pending.projectId,
+      sessionState ?? pending.sessionState ?? null,
+    )
     return pending.kind === 'confirmation'
-      ? formatConfirmationMessage(pending.confirmation!, { id: pending.sessionId })
-      : formatQuestionMessage(pending.question!, { id: pending.sessionId })
+      ? formatConfirmationMessage(pending.confirmation!, session, options)
+      : formatQuestionMessage(pending.question!, session, options)
+  }
+
+  /**
+   * Re-read the session state before editing, so the final message reflects the
+   * real post-answer state (agent resumed, waiting again, done…). Falls back to
+   * the state remembered at send time when the read fails or the setting is off.
+   */
+  private async refreshSessionState(pending: PendingNotification): Promise<string | null | undefined> {
+    if (!this.settings?.includeSessionState) return pending.sessionState ?? null
+    try {
+      const status = await this.openfox!.getSessionStatus(pending.sessionId)
+      return statusStateLabel(status.state) || null
+    } catch (error) {
+      this.logger.debug('Could not refresh session state', { error: String(error), sessionId: pending.sessionId })
+      return pending.sessionState ?? null
+    }
   }
 
   /** Edit the Telegram message to show the outcome and stop tracking it. */
   private async finalize(pending: PendingNotification, verdict: string): Promise<void> {
     this.untrack(pending.token)
+    const sessionState = await this.refreshSessionState(pending)
     try {
       await this.telegram!.editMessageText(
         pending.chatId,
         pending.messageId,
-        `${this.baseMessage(pending)}\n\n<b>${escapeHtml(verdict)}</b>`,
+        `${this.baseMessage(pending, sessionState)}\n\n<b>${escapeHtml(verdict)}</b>`,
         emptyKeyboard(),
       )
     } catch (error) {

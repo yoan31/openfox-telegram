@@ -36,6 +36,13 @@ export interface SessionRef {
   id: string
   title?: string
   workdir?: string
+  projectId?: string
+  isRunning?: boolean
+  phase?: string
+}
+
+export interface SessionStatus {
+  state: 'waiting' | 'blocked' | 'completed' | 'running' | null
 }
 
 export interface TelegramSettings {
@@ -49,6 +56,8 @@ export interface TelegramSettings {
   notifyOnPathConfirmation: boolean
   interactiveReplies: boolean
   clearOnExternalAnswer: boolean
+  includeSessionLink: boolean
+  includeSessionState: boolean
 }
 
 /**
@@ -65,5 +74,8 @@ export interface PendingNotification {
   messageId: number
   question?: PendingQuestion
   confirmation?: PendingConfirmation
+  projectId?: string
+  sessionTitle?: string
+  sessionState?: string | null
   createdAt: number
 }

@@ -16,6 +16,8 @@ const BASE_SETTINGS: TelegramSettings = {
   notifyOnPathConfirmation: true,
   interactiveReplies: true,
   clearOnExternalAnswer: true,
+  includeSessionLink: true,
+  includeSessionState: true,
 }
 
 interface SentMessage {
@@ -62,21 +64,22 @@ class FakeTelegram {
 }
 
 class FakeOpenFox {
-  sessions: Array<{ id: string; title?: string }> = []
+  sessions: Array<{ id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }> = []
   confirmations: Record<string, PendingConfirmation[]> = {}
   questions: Record<string, PendingQuestion[]> = {}
+  statuses: Record<string, 'waiting' | 'blocked' | 'completed' | 'running' | null> = {}
   answered: Array<{ sessionId: string; callId: string; answer: string }> = []
   confirmed: Array<{ sessionId: string; callId: string; approved: boolean; alwaysAllow: boolean }> = []
 
   async listSessionsWithConfirmations(): Promise<{
-    sessions: Array<{ id: string; title?: string }>
+    sessions: Array<{ id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }>
     pendingConfirmationsBySession: Record<string, PendingConfirmation[]>
   }> {
     return { sessions: this.sessions, pendingConfirmationsBySession: this.confirmations }
   }
 
   async getSession(sessionId: string): Promise<{
-    session: { id: string; title?: string }
+    session: { id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }
     pendingQuestions: PendingQuestion[]
     pendingConfirmations: PendingConfirmation[]
   }> {
@@ -85,6 +88,10 @@ class FakeOpenFox {
       pendingQuestions: this.questions[sessionId] ?? [],
       pendingConfirmations: this.confirmations[sessionId] ?? [],
     }
+  }
+
+  async getSessionStatus(sessionId: string): Promise<{ state: 'waiting' | 'blocked' | 'completed' | 'running' | null }> {
+    return { state: this.statuses[sessionId] ?? null }
   }
 
   async answerQuestion(sessionId: string, callId: string, answer: string): Promise<boolean> {
@@ -338,6 +345,98 @@ describe('TelegramBridge — clearing messages answered in OpenFox', () => {
     await bridge.pollConfirmations()
 
     expect(reads).toBe(0)
+  })
+})
+
+describe('TelegramBridge — session link and state', () => {
+  it('includes the session link and state in a sent question', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    expect(telegram.sent[0]!.text).toContain('État : En attente')
+    expect(telegram.sent[0]!.text).toContain('<a href="http://127.0.0.1:10369/p/p1/s/s1">Ouvrir la session</a>')
+  })
+
+  it('includes the session link and state in a sent confirmation', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.sessions = [{ id: 's1', projectId: 'p1', phase: 'waiting' }]
+    openfox.confirmations = {
+      s1: [{ callId: 'c1', tool: 'run_command', paths: ['/x'], workdir: '/w', reason: 'outside_workdir' }],
+    }
+
+    await bridge.pollConfirmations()
+
+    expect(telegram.sent[0]!.text).toContain('État : En attente')
+    expect(telegram.sent[0]!.text).toContain('/p/p1/s/s1')
+  })
+
+  it('omits the link and state when the settings are off', async () => {
+    const { bridge, telegram, openfox } = createBridge({ includeSessionLink: false, includeSessionState: false })
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
+
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    expect(telegram.sent[0]!.text).not.toContain('État :')
+    expect(telegram.sent[0]!.text).not.toContain('Ouvrir la session')
+  })
+
+  it('refreshes the state and keeps the link in the final edit', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+    expect(telegram.sent[0]!.text).toContain('État : En attente')
+
+    // Post-answer the session is running again -> refreshed state differs.
+    openfox.statuses = { s1: 'completed' }
+    await bridge.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 100 }, from: { id: 7 }, text: 'Conrad' },
+    })
+
+    expect(telegram.edited).toHaveLength(1)
+    expect(telegram.edited[0]!.text).toContain('État : Terminée')
+    expect(telegram.edited[0]!.text).toContain('<a href="http://127.0.0.1:10369/p/p1/s/s1">Ouvrir la session</a>')
+    expect(telegram.edited[0]!.text).toContain('Conrad')
+  })
+
+  it('falls back to the remembered state when the status read fails', async () => {
+    const { bridge, telegram, openfox } = createBridge()
+    openfox.sessions = [{ id: 's1', projectId: 'p1', phase: 'waiting' }]
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+
+    openfox.getSessionStatus = async () => {
+      throw new Error('HTTP 500')
+    }
+    await bridge.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 100 }, from: { id: 7 }, text: 'Conrad' },
+    })
+
+    expect(telegram.edited[0]!.text).toContain('État : En attente')
+  })
+
+  it('makes exactly one status request per finalization', async () => {
+    const { bridge, openfox } = createBridge()
+    let statusReads = 0
+    openfox.getSessionStatus = async () => {
+      statusReads += 1
+      return { state: 'running' }
+    }
+    openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
+    await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
+    expect(statusReads).toBe(0)
+
+    await bridge.handleUpdate({
+      update_id: 1,
+      message: { message_id: 5, chat: { id: 100 }, from: { id: 7 }, text: 'Conrad' },
+    })
+    expect(statusReads).toBe(1)
   })
 })
 

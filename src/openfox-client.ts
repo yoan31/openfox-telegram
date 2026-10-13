@@ -7,7 +7,7 @@
  */
 
 import type { FetchLike } from './telegram-client.js'
-import type { PendingConfirmation, PendingQuestion, SessionRef } from './types.js'
+import type { PendingConfirmation, PendingQuestion, SessionRef, SessionStatus } from './types.js'
 
 export interface OpenFoxClientOptions {
   baseUrl: string
@@ -92,6 +92,14 @@ export class OpenFoxClient {
       pendingQuestions: data.pendingQuestions ?? [],
       pendingConfirmations: data.pendingConfirmations ?? [],
     }
+  }
+
+  /**
+   * Lightweight read-only status projection (`GET /api/sessions/:id/status`).
+   * Returns the derived `state` (`running | waiting | blocked | completed | null`).
+   */
+  async getSessionStatus(sessionId: string): Promise<SessionStatus> {
+    return this.getJson<SessionStatus>(`/api/sessions/${encodeURIComponent(sessionId)}/status`)
   }
 
   /** Answer a pending `ask_user` question. */
