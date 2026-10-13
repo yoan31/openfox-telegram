@@ -189,8 +189,8 @@ const SETTINGS_SCHEMA: PluginSettingsSchema = {
       type: 'boolean',
       label: { en: 'Include session link', fr: 'Inclure le lien de session' },
       description: {
-        en: 'Add a clickable link to the session in OpenFox.',
-        fr: 'Ajouter un lien cliquable vers la session dans OpenFox.',
+        en: 'Add a clickable link to the session in OpenFox. The link uses the base URL above, so it is only tappable from a device that can reach that host (use a LAN IP or reverse proxy, not 127.0.0.1, when reading Telegram on a phone).',
+        fr: 'Ajouter un lien cliquable vers la session dans OpenFox. Le lien reprend l’URL de base ci-dessus : il n’est ouvrable que depuis un appareil pouvant joindre cet hôte (utilisez une IP LAN ou un reverse proxy, pas 127.0.0.1, si vous lisez Telegram sur téléphone).',
       },
       default: DEFAULT_SETTINGS.includeSessionLink,
     },

@@ -64,7 +64,7 @@ class FakeTelegram {
 }
 
 class FakeOpenFox {
-  sessions: Array<{ id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }> = []
+  sessions: Array<{ id: string; title?: string; projectId?: string }> = []
   confirmations: Record<string, PendingConfirmation[]> = {}
   questions: Record<string, PendingQuestion[]> = {}
   statuses: Record<string, 'waiting' | 'blocked' | 'completed' | 'running' | null> = {}
@@ -72,14 +72,14 @@ class FakeOpenFox {
   confirmed: Array<{ sessionId: string; callId: string; approved: boolean; alwaysAllow: boolean }> = []
 
   async listSessionsWithConfirmations(): Promise<{
-    sessions: Array<{ id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }>
+    sessions: Array<{ id: string; title?: string; projectId?: string }>
     pendingConfirmationsBySession: Record<string, PendingConfirmation[]>
   }> {
     return { sessions: this.sessions, pendingConfirmationsBySession: this.confirmations }
   }
 
   async getSession(sessionId: string): Promise<{
-    session: { id: string; title?: string; projectId?: string; isRunning?: boolean; phase?: string }
+    session: { id: string; title?: string; projectId?: string }
     pendingQuestions: PendingQuestion[]
     pendingConfirmations: PendingConfirmation[]
   }> {
@@ -351,7 +351,7 @@ describe('TelegramBridge — clearing messages answered in OpenFox', () => {
 describe('TelegramBridge — session link and state', () => {
   it('includes the session link and state in a sent question', async () => {
     const { bridge, telegram, openfox } = createBridge()
-    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1' }]
     openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
 
     await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
@@ -362,7 +362,7 @@ describe('TelegramBridge — session link and state', () => {
 
   it('includes the session link and state in a sent confirmation', async () => {
     const { bridge, telegram, openfox } = createBridge()
-    openfox.sessions = [{ id: 's1', projectId: 'p1', phase: 'waiting' }]
+    openfox.sessions = [{ id: 's1', projectId: 'p1' }]
     openfox.confirmations = {
       s1: [{ callId: 'c1', tool: 'run_command', paths: ['/x'], workdir: '/w', reason: 'outside_workdir' }],
     }
@@ -375,7 +375,7 @@ describe('TelegramBridge — session link and state', () => {
 
   it('omits the link and state when the settings are off', async () => {
     const { bridge, telegram, openfox } = createBridge({ includeSessionLink: false, includeSessionState: false })
-    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1' }]
     openfox.questions = { s1: [{ callId: 'q1', question: 'Continue?', type: 'text' }] }
 
     await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
@@ -386,7 +386,7 @@ describe('TelegramBridge — session link and state', () => {
 
   it('refreshes the state and keeps the link in the final edit', async () => {
     const { bridge, telegram, openfox } = createBridge()
-    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1', isRunning: true }]
+    openfox.sessions = [{ id: 's1', title: 'Session 1', projectId: 'p1' }]
     openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
     await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
     expect(telegram.sent[0]!.text).toContain('État : En attente')
@@ -406,7 +406,7 @@ describe('TelegramBridge — session link and state', () => {
 
   it('falls back to the remembered state when the status read fails', async () => {
     const { bridge, telegram, openfox } = createBridge()
-    openfox.sessions = [{ id: 's1', projectId: 'p1', phase: 'waiting' }]
+    openfox.sessions = [{ id: 's1', projectId: 'p1' }]
     openfox.questions = { s1: [{ callId: 'q1', question: 'Name?', type: 'text' }] }
     await bridge.onTurnCompleted({ sessionId: 's1', data: { reason: 'waiting_for_user' } })
 

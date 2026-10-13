@@ -52,7 +52,7 @@ After enabling the plugin, open **Settings → Plugins → Telegram**:
 | **Notify on confirmations** | Forward path/dangerous-command confirmations.                            |
 | **Interactive replies**  | Show inline buttons and accept Telegram replies.                             |
 | **Clear on external answer** | Delete the Telegram message once the request is answered directly in OpenFox. |
-| **Include session link**  | Add a clickable link to the session in OpenFox.                             |
+| **Include session link**  | Add a clickable link to the session in OpenFox. The link reuses the base URL, so it is only tappable from a device that can reach that host (LAN IP / reverse proxy, not `127.0.0.1`, when reading Telegram on a phone). |
 | **Include session state** | Show whether the session is running, waiting, blocked or completed.         |
 | **Test the connection**  | Button: sends a test message and checks the OpenFox server.                  |
 

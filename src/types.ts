@@ -37,8 +37,6 @@ export interface SessionRef {
   title?: string
   workdir?: string
   projectId?: string
-  isRunning?: boolean
-  phase?: string
 }
 
 export interface SessionStatus {
