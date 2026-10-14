@@ -120,6 +120,12 @@ npm run build   # tsup -> dist/index.js
 
 ## Changelog
 
+### Unreleased
+
+- Fix: `telegram.status` reads the settings once per call and reports every field
+  from that single snapshot (previously it read the provider twice and mixed the
+  freshly read `pollIntervalSeconds` with the bridge's last-applied state).
+
 ### 1.0.4
 
 - Fix: path confirmations are no longer missed when the plugin starts before its

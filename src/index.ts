@@ -272,10 +272,10 @@ export async function register(registry: PluginRegistry): Promise<void> {
   })
 
   registry.registerRpc('telegram.status', async () => {
+    // Single snapshot: configure the bridge from it, then report every field
+    // from the same read (no second provider read, one source of truth).
     const settings = readSettings(context)
-    // Refresh from the live provider so the status reflects just-saved values
-    // instead of the previous loop iteration's snapshot.
-    bridge.refreshSettings()
+    bridge.configure(settings)
     return {
       configured: bridge.isConfigured(),
       running: bridge.isRunning(),
