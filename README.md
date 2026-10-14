@@ -120,7 +120,7 @@ npm run build   # tsup -> dist/index.js
 
 ## Changelog
 
-### Unreleased
+### 1.0.4
 
 - Fix: path confirmations are no longer missed when the plugin starts before its
   settings are readable. The host resolves the plugin's declared schema before
