@@ -236,11 +236,18 @@ export async function register(registry: PluginRegistry): Promise<void> {
     createTelegram: (settings) => new TelegramClient({ token: settings.botToken }),
     createOpenFox: (settings) =>
       new OpenFoxClient({ baseUrl: settings.openfoxBaseUrl, sessionToken: settings.sessionToken }),
+    // The host only returns settings once the plugin's schema is registered, so
+    // the schema is registered first (below) and the loops re-read through this
+    // provider, keeping the bridge configured without a turn.completed hook.
+    settingsProvider: () => readSettings(context),
   })
 
-  bridge.configure(readSettings(context))
-
+  // Register the schema BEFORE reading settings: `context.settings()` resolves
+  // the declared schema and returns `{}` while it is missing, which would leave
+  // the bridge unconfigured (no bot token) until the first turn.completed.
   registry.registerSettings(SETTINGS_SCHEMA)
+
+  bridge.configure(readSettings(context))
 
   registry.registerHook('turn.completed', async (payload) => {
     bridge.configure(readSettings(context))
@@ -266,8 +273,11 @@ export async function register(registry: PluginRegistry): Promise<void> {
 
   registry.registerRpc('telegram.status', async () => {
     const settings = readSettings(context)
+    // Refresh from the live provider so the status reflects just-saved values
+    // instead of the previous loop iteration's snapshot.
+    bridge.refreshSettings()
     return {
-      configured: settings.botToken !== '' && settings.chatId !== '',
+      configured: bridge.isConfigured(),
       running: bridge.isRunning(),
       pending: bridge.pendingCount(),
       pollIntervalSeconds: settings.pollIntervalSeconds,

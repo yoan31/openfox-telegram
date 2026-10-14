@@ -78,6 +78,12 @@ src/
   `includeSessionLink` / `includeSessionState` settings.
 - `callback_data` is capped at 64 bytes → the bridge sends a short opaque token,
   never the `callId`.
+- `context.settings()` resolves the plugin's **declared schema** and returns `{}`
+  while it is missing. `register()` therefore calls `registry.registerSettings()`
+  **before** `bridge.configure(readSettings())`, and passes a `settingsProvider`
+  so the loops re-read settings each iteration — otherwise the bridge would stay
+  unconfigured (no bot token → no path-confirmation polling) until the first
+  `turn.completed` hook re-read the settings.
 - Background loops (`confirmationLoop`, `updatesLoop`) are started in `register()`
   and stopped in `deactivate()`; never start them twice.
 - **Do not install this plugin from its own directory** through

@@ -120,6 +120,16 @@ npm run build   # tsup -> dist/index.js
 
 ## Changelog
 
+### Unreleased
+
+- Fix: path confirmations are no longer missed when the plugin starts before its
+  settings are readable. The host resolves the plugin's declared schema before
+  returning settings, so the schema is now registered **before** the bridge is
+  configured, and the polling loops re-read settings each iteration. Previously
+  the bridge stayed unconfigured (no bot token) until the first `turn.completed`
+  hook happened to re-read the settings, so any confirmation raised before that
+  first turn was never forwarded to Telegram.
+
 ### 1.0.3
 
 - Show a clickable link to the session (`/p/<projectId>/s/<sessionId>`) and its

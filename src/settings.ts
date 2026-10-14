@@ -69,8 +69,3 @@ export function normalizeSettings(values: Record<string, unknown> | undefined): 
     includeSessionState: asBoolean(raw['includeSessionState'], DEFAULT_SETTINGS.includeSessionState),
   }
 }
-
-/** True when the plugin has enough configuration to talk to Telegram + OpenFox. */
-export function isConfigured(settings: TelegramSettings): boolean {
-  return settings.botToken !== '' && settings.chatId !== ''
-}

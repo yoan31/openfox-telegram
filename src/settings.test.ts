@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { DEFAULT_SETTINGS, isConfigured, normalizeSettings, parseAllowedUserIds } from './settings.js'
+import { DEFAULT_SETTINGS, normalizeSettings, parseAllowedUserIds } from './settings.js'
 
 describe('normalizeSettings', () => {
   it('returns defaults for empty input', () => {
@@ -44,12 +44,5 @@ describe('parseAllowedUserIds', () => {
     expect(parseAllowedUserIds([1, '2', 'x'])).toEqual([1, 2])
     expect(parseAllowedUserIds('10 20')).toEqual([10, 20])
     expect(parseAllowedUserIds(undefined)).toEqual([])
-  })
-})
-
-describe('isConfigured', () => {
-  it('requires a bot token and a chat id', () => {
-    expect(isConfigured(DEFAULT_SETTINGS)).toBe(false)
-    expect(isConfigured({ ...DEFAULT_SETTINGS, botToken: 't', chatId: 'c' })).toBe(true)
   })
 })

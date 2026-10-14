@@ -43,6 +43,12 @@ export interface BridgeOptions {
   logger: BridgeLogger
   createTelegram: (settings: TelegramSettings) => TelegramClient
   createOpenFox: (settings: TelegramSettings) => OpenFoxClient
+  /**
+   * Optional live settings source. When provided, the background loops re-read
+   * the settings on every iteration, so the bridge picks up configuration
+   * without waiting for a `turn.completed` hook to reconfigure it.
+   */
+  settingsProvider?: () => TelegramSettings
   now?: () => number
   randomToken?: () => string
 }
@@ -59,6 +65,7 @@ export class TelegramBridge {
   private readonly logger: BridgeLogger
   private readonly createTelegram: BridgeOptions['createTelegram']
   private readonly createOpenFox: BridgeOptions['createOpenFox']
+  private readonly settingsProvider: (() => TelegramSettings) | null
   private readonly now: () => number
   private readonly randomToken: () => string
 
@@ -83,15 +90,28 @@ export class TelegramBridge {
     this.logger = options.logger
     this.createTelegram = options.createTelegram
     this.createOpenFox = options.createOpenFox
+    this.settingsProvider = options.settingsProvider ?? null
     this.now = options.now ?? (() => Date.now())
     this.randomToken = options.randomToken ?? defaultToken
   }
 
   /** Apply (or refresh) configuration; clients are rebuilt from it. */
   configure(settings: TelegramSettings): void {
+    // Skip the rebuild when nothing changed: the loops call this on every
+    // iteration, so identical settings must not churn the client objects.
+    if (this.settings && settingsEqual(this.settings, settings)) return
     this.settings = settings
     this.telegram = settings.botToken ? this.createTelegram(settings) : null
     this.openfox = settings.openfoxBaseUrl ? this.createOpenFox(settings) : null
+  }
+
+  /**
+   * Re-read settings from the provider (when one was supplied) so the loops and
+   * status reads do not depend on a hook to reconfigure the bridge. No-op
+   * without a provider.
+   */
+  refreshSettings(): void {
+    if (this.settingsProvider) this.configure(this.settingsProvider())
   }
 
   isRunning(): boolean {
@@ -117,6 +137,11 @@ export class TelegramBridge {
 
   private configured(): boolean {
     return Boolean(this.settings && this.telegram && this.openfox && this.settings.botToken && this.settings.chatId)
+  }
+
+  /** True when the bridge currently has usable Telegram + OpenFox clients. */
+  isConfigured(): boolean {
+    return this.configured()
   }
 
   private sleep(ms: number): Promise<void> {
@@ -240,6 +265,7 @@ export class TelegramBridge {
 
   private async confirmationLoop(): Promise<void> {
     while (this.running) {
+      this.refreshSettings()
       const intervalMs = Math.max(5, this.settings?.pollIntervalSeconds ?? 10) * 1000
       await this.sleep(intervalMs)
       if (!this.running) break
@@ -381,6 +407,7 @@ export class TelegramBridge {
 
   private async updatesLoop(): Promise<void> {
     while (this.running) {
+      this.refreshSettings()
       if (!this.configured() || !this.settings?.interactiveReplies) {
         await this.sleep(2000)
         continue
@@ -650,4 +677,18 @@ function defaultToken(): string {
     out += TOKEN_ALPHABET[Math.floor(Math.random() * TOKEN_ALPHABET.length)]
   }
   return out
+}
+
+/** Shallow-but-exact comparison of normalized settings (arrays compared by value). */
+function settingsEqual(a: TelegramSettings, b: TelegramSettings): boolean {
+  const keys = Object.keys(a) as (keyof TelegramSettings)[]
+  if (keys.length !== Object.keys(b).length) return false
+  return keys.every((key) => {
+    const left = a[key]
+    const right = b[key]
+    if (Array.isArray(left) && Array.isArray(right)) {
+      return left.length === right.length && left.every((value, index) => value === right[index])
+    }
+    return left === right
+  })
 }

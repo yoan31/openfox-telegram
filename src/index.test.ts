@@ -5,6 +5,8 @@ interface RegistrySpy {
   hooks: Record<string, (payload: unknown) => unknown>
   rpcs: Record<string, (params: Record<string, unknown>) => unknown>
   settings?: unknown
+  /** Ordered log of settings()/registerSettings() calls, to assert wiring order. */
+  events: string[]
   context: {
     id: string
     version: string
@@ -15,24 +17,38 @@ interface RegistrySpy {
   }
 }
 
-function createRegistry(): RegistrySpy {
-  const registry: RegistrySpy = {
+/**
+ * Build a fake host registry. With `gateSettingsOnSchema`, `context.settings()`
+ * returns `{}` until `registerSettings` has run — this mirrors the real host
+ * (`PluginHost.createContext().settings` looks up the schema before reading
+ * values), so a `configure()` that runs before `registerSettings` sees no
+ * settings and leaves the bridge unconfigured.
+ */
+function createRegistry(options: {
+  values?: Record<string, unknown>
+  gateSettingsOnSchema?: boolean
+} = {}): { spy: RegistrySpy; registry: unknown } {
+  const { values = {}, gateSettingsOnSchema = false } = options
+  let schemaRegistered = false
+
+  const spy: RegistrySpy = {
     hooks: {},
     rpcs: {},
+    events: [],
     context: {
       id: 'openfox-telegram',
       version: '1.0.1',
       runtime: { mode: 'production', configDirectory: '/tmp' },
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-      settings: () => ({}),
+      settings: () => {
+        spy.events.push('settings')
+        return schemaRegistered || !gateSettingsOnSchema ? values : {}
+      },
       notify: vi.fn(),
     },
   }
-  return registry
-}
 
-function asRegistry(spy: RegistrySpy) {
-  return {
+  const registry = {
     context: spy.context,
     runtime: spy.context.runtime,
     registerHook: (event: string, handler: (payload: unknown) => unknown) => {
@@ -42,9 +58,13 @@ function asRegistry(spy: RegistrySpy) {
       spy.rpcs[method] = handler
     },
     registerSettings: (schema: unknown) => {
+      spy.events.push('registerSettings')
+      schemaRegistered = true
       spy.settings = schema
     },
   }
+
+  return { spy, registry }
 }
 
 describe('plugin registration', () => {
@@ -61,8 +81,8 @@ describe('plugin registration', () => {
   })
 
   it('registers settings, the turn.completed hook, RPCs and notifies', async () => {
-    const spy = createRegistry()
-    await register(asRegistry(spy) as never)
+    const { spy, registry } = createRegistry()
+    await register(registry as never)
 
     expect(spy.settings).toBeDefined()
     const fields = (spy.settings as { fields: { key: string; type: string; rpcMethod?: string }[] }).fields
@@ -75,8 +95,8 @@ describe('plugin registration', () => {
   })
 
   it('throws and stays silent on failure when the connection test fails', async () => {
-    const spy = createRegistry()
-    await register(asRegistry(spy) as never)
+    const { spy, registry } = createRegistry()
+    await register(registry as never)
     spy.context.notify.mockClear()
 
     await expect(spy.rpcs['telegram.test']!({})).rejects.toThrow()
@@ -86,8 +106,8 @@ describe('plugin registration', () => {
   })
 
   it('reports an unconfigured status and survives a hook call without config', async () => {
-    const spy = createRegistry()
-    await register(asRegistry(spy) as never)
+    const { spy, registry } = createRegistry()
+    await register(registry as never)
 
     const status = (await spy.rpcs['telegram.status']!({})) as { configured: boolean; running: boolean }
     expect(status.configured).toBe(false)
@@ -102,12 +122,47 @@ describe('plugin registration', () => {
   })
 
   it('stops the bridge on deactivate', async () => {
-    const spy = createRegistry()
-    await register(asRegistry(spy) as never)
+    const { spy, registry } = createRegistry()
+    await register(registry as never)
     const before = (await spy.rpcs['telegram.status']!({})) as { running: boolean }
     expect(before.running).toBe(true)
     deactivate()
     const after = (await spy.rpcs['telegram.status']!({})) as { running: boolean }
     expect(after.running).toBe(false)
+  })
+
+  // --- regression: settings must be read after the schema is registered ------
+
+  it('configures the bridge at registration without needing a turn.completed hook', async () => {
+    // The host only exposes settings once the plugin has registered its schema.
+    const { spy, registry } = createRegistry({
+      values: { botToken: 'token', chatId: '100' },
+      gateSettingsOnSchema: true,
+    })
+    await register(registry as never)
+
+    // No hook was triggered: the bridge must already be configured from register().
+    const status = (await spy.rpcs['telegram.status']!({})) as { configured: boolean }
+    expect(status.configured).toBe(true)
+
+    deactivate()
+  })
+
+  it('registers the settings schema before reading settings (root cause)', async () => {
+    const { spy, registry } = createRegistry({
+      values: { botToken: 'token', chatId: '100' },
+      gateSettingsOnSchema: true,
+    })
+    await register(registry as never)
+
+    const registerIdx = spy.events.indexOf('registerSettings')
+    const firstSettingsIdx = spy.events.indexOf('settings')
+    expect(registerIdx).toBeGreaterThanOrEqual(0)
+    expect(firstSettingsIdx).toBeGreaterThanOrEqual(0)
+    // registerSettings must precede the first settings() read, otherwise the
+    // bridge reads an empty settings object and never gets configured.
+    expect(firstSettingsIdx).toBeGreaterThan(registerIdx)
+
+    deactivate()
   })
 })

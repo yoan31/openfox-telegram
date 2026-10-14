@@ -574,4 +574,96 @@ describe('TelegramBridge — lifecycle', () => {
     bridge.stop()
     expect(bridge.isRunning()).toBe(false)
   })
+
+  it('reconfigures the polling loop from the settings provider without a hook', async () => {
+    vi.useFakeTimers()
+    try {
+      const telegram = new FakeTelegram()
+      const openfox = new FakeOpenFox()
+      openfox.sessions = [{ id: 's1' }]
+      openfox.confirmations = {
+        s1: [{ callId: 'c1', tool: 'run_command', paths: ['/etc/passwd'], workdir: '/w', reason: 'sensitive_file' }],
+      }
+
+      // Mimic the host: settings stay empty until the plugin's schema exists,
+      // then become available. No turn.completed hook is ever fired here.
+      // interactiveReplies is off so the updates loop sleeps instead of
+      // busy-looping on the fake getUpdates.
+      let available = false
+      const configuredValues = { ...BASE_SETTINGS, interactiveReplies: false }
+      const bridge = new TelegramBridge({
+        logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+        createTelegram: () => telegram as unknown as TelegramClient,
+        createOpenFox: () => openfox as unknown as OpenFoxClient,
+        settingsProvider: () =>
+          available ? { ...configuredValues } : { ...configuredValues, botToken: '', chatId: '' },
+      })
+      bridge.configure({ ...configuredValues, botToken: '', chatId: '' })
+      expect(bridge.isConfigured()).toBe(false)
+
+      bridge.start()
+      // First poll while still unconfigured -> nothing sent.
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(telegram.sent).toHaveLength(0)
+
+      // Settings become available (schema now registered): the next poll must
+      // pick them up and forward, with no hook to reconfigure the bridge.
+      available = true
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(bridge.isConfigured()).toBe(true)
+      expect(telegram.sent).toHaveLength(1)
+
+      bridge.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the same clients when the settings are unchanged', () => {
+    let telegramBuilds = 0
+    let openfoxBuilds = 0
+    const bridge = new TelegramBridge({
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      createTelegram: () => {
+        telegramBuilds += 1
+        return new FakeTelegram() as unknown as TelegramClient
+      },
+      createOpenFox: () => {
+        openfoxBuilds += 1
+        return new FakeOpenFox() as unknown as OpenFoxClient
+      },
+      settingsProvider: () => ({ ...BASE_SETTINGS }),
+    })
+
+    bridge.refreshSettings()
+    expect(telegramBuilds).toBe(1)
+    expect(openfoxBuilds).toBe(1)
+
+    // Unchanged settings -> no client churn.
+    bridge.refreshSettings()
+    bridge.refreshSettings()
+    expect(telegramBuilds).toBe(1)
+    expect(openfoxBuilds).toBe(1)
+  })
+
+  it('rebuilds clients when a setting changes', () => {
+    let telegramBuilds = 0
+    let chatId = '100'
+    const bridge = new TelegramBridge({
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      createTelegram: () => {
+        telegramBuilds += 1
+        return new FakeTelegram() as unknown as TelegramClient
+      },
+      createOpenFox: () => new FakeOpenFox() as unknown as OpenFoxClient,
+      settingsProvider: () => ({ ...BASE_SETTINGS, chatId }),
+    })
+
+    bridge.refreshSettings()
+    expect(telegramBuilds).toBe(1)
+
+    chatId = '200'
+    bridge.refreshSettings()
+    expect(telegramBuilds).toBe(2)
+  })
 })
