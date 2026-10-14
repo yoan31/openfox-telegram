@@ -120,7 +120,7 @@ npm run build   # tsup -> dist/index.js
 
 ## Changelog
 
-### Unreleased
+### 1.0.5
 
 - Fix: `telegram.status` reads the settings once per call and reports every field
   from that single snapshot (previously it read the provider twice and mixed the
